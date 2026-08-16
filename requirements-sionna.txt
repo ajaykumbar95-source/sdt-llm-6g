@@ -1,0 +1,20 @@
+# For src/sdt_llm/data/sionna_bridge.py — real ray-traced 6G channel data.
+# NOT part of requirements.txt / requirements-full.txt: this is a large,
+# fast-moving, hardware-sensitive dependency you opt into separately.
+#
+#   pip install -r requirements-sionna.txt --break-system-packages
+#
+# Verified (in the sandbox this project was built in) to install cleanly
+# from plain PyPI with no extra index needed:
+sionna-rt==2.0.1
+mitsuba==3.8.0
+drjit==1.3.1
+ipywidgets>=8.1.5
+pythreejs>=2.4.2
+importlib_resources>=6.4.5
+
+# No CUDA/GPU required: mitsuba's 'llvm_ad_mono_polarized' variant runs
+# ray tracing on CPU via LLVM. It's slower than GPU but entirely functional
+# for the small scenes/sample counts in sionna_bridge.py's examples — this
+# matters if your machine doesn't have an NVIDIA GPU (e.g. AMD integrated
+# graphics laptops). See sionna_bridge.py's `variant=` argument.

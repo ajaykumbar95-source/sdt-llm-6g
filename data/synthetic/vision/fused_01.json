@@ -1,0 +1,58 @@
+{
+  "timestamp": 1.0,
+  "camera_pos": [
+    3.0,
+    0.2,
+    1.5
+  ],
+  "objects": [
+    {
+      "object_id": "table_1",
+      "category": "table",
+      "world_pos": [
+        3.0,
+        3.0,
+        0.4
+      ],
+      "velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "size_m": 0.9,
+      "action": null
+    },
+    {
+      "object_id": "chair_1",
+      "category": "chair",
+      "world_pos": [
+        3.0,
+        2.6,
+        0.45
+      ],
+      "velocity": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "size_m": 0.5,
+      "action": null
+    },
+    {
+      "object_id": "person_1",
+      "category": "person",
+      "world_pos": [
+        1.8,
+        2.5,
+        0.0
+      ],
+      "velocity": [
+        0.8,
+        0.0,
+        0.0
+      ],
+      "size_m": 0.5,
+      "action": "walking"
+    }
+  ]
+}

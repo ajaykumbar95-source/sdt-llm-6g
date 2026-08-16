@@ -1,0 +1,14 @@
+# Core dependencies — enough to run all three demos end-to-end on synthetic
+# data with the mock vision/LLM backends (zero model downloads, works fully
+# offline). Install with:
+#
+#   pip install -r requirements.txt --break-system-packages   # Ubuntu w/ system Python
+#   pip install -r requirements.txt                           # inside a venv
+#
+numpy>=1.24
+scipy>=1.10          # linear_sum_assignment (temporal cluster matching)
+Pillow>=10.0          # synthetic camera-frame rendering + pixel-level mock CV
+requests>=2.31        # only imported by llm/api_llm.py (Anthropic / OpenAI-compatible backends)
+
+# dev / tests
+pytest>=7.4

@@ -1,0 +1,20 @@
+# Optional, heavier dependencies for the REAL pretrained backends:
+#   - encoders/vision_encoder.py  backend="clip"   (real CLIP zero-shot tagging)
+#   - llm/local_hf_llm.py          LocalHFLLM       (real local instruction-tuned LLM)
+#
+# Not needed for the synthetic-data smoke test (requirements.txt alone covers
+# that, using the mock backends) — install this on your own machine, with
+# internet access to Hugging Face Hub, once you're ready to move past mocks.
+#
+#   pip install -r requirements.txt -r requirements-full.txt --break-system-packages
+#
+# NOTE (Ubuntu, no GPU): the plain `torch` wheel from PyPI pulls in several
+# GB of CUDA libraries it will never use on a CPU-only machine. Prefer the
+# official CPU-only index instead:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu --break-system-packages
+# then install the rest of this file normally.
+
+transformers>=4.40
+accelerate>=0.28       # helps transformers place/load models efficiently
+sentencepiece>=0.2      # tokenizer backend some instruct models need
+torch>=2.2               # see the CPU-only note above before installing this on Ubuntu w/o a GPU
