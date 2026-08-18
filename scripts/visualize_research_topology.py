@@ -17,24 +17,24 @@ def box(ax, x, y, w, h, title, subtitle):
         w,
         h,
         boxstyle="round,pad=0.02,rounding_size=0.08",
-        linewidth=1.5,
+        linewidth=1.6,
         fill=False,
     )
     ax.add_patch(patch)
 
     ax.text(
         x,
-        y + 0.15,
+        y + 0.14,
         title,
         ha="center",
         va="center",
-        fontsize=11,
+        fontsize=12,
         fontweight="bold",
     )
 
     ax.text(
         x,
-        y - 0.15,
+        y - 0.16,
         subtitle,
         ha="center",
         va="center",
@@ -42,54 +42,85 @@ def box(ax, x, y, w, h, title, subtitle):
     )
 
 
-def arrow(ax, x1, y1, x2, y2, label=None):
+def arrow(
+    ax,
+    x1,
+    y1,
+    x2,
+    y2,
+    label=None,
+    label_dx=0.0,
+    label_dy=0.0,
+    bidirectional=False,
+):
+    style = "<->" if bidirectional else "->"
+
     ax.add_patch(
         FancyArrowPatch(
             (x1, y1),
             (x2, y2),
-            arrowstyle="->",
+            arrowstyle=style,
             mutation_scale=14,
-            linewidth=1.4,
+            linewidth=1.5,
         )
     )
 
     if label:
         ax.text(
-            (x1 + x2) / 2,
-            (y1 + y2) / 2 + 0.12,
+            (x1 + x2) / 2 + label_dx,
+            (y1 + y2) / 2 + label_dy,
             label,
             ha="center",
             va="center",
-            fontsize=8,
+            fontsize=8.5,
+            bbox=dict(
+                facecolor="white",
+                edgecolor="none",
+                pad=1.5,
+            ),
         )
 
 
 def main():
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=(13, 9))
 
-    ax.set_xlim(0, 12)
-    ax.set_ylim(0, 10)
+    ax.set_xlim(0, 13)
+    ax.set_ylim(0, 11)
     ax.axis("off")
 
-    # ---------------------------------------------------------
-    # RAN
-    # ---------------------------------------------------------
+    # =========================================================
+    # SECTION HEADERS
+    # =========================================================
 
     ax.text(
-        6,
-        9.45,
+        6.5,
+        10.45,
         "5G RADIO ACCESS NETWORK",
+        ha="center",
+        va="center",
+        fontsize=17,
+        fontweight="bold",
+    )
+
+    ax.text(
+        6.5,
+        5.55,
+        "5G CORE / EPC",
         ha="center",
         va="center",
         fontsize=15,
         fontweight="bold",
     )
 
+    # =========================================================
+    # RADIO ACCESS NETWORK
+    # =========================================================
+
     box(
         ax,
-        6,
-        7.9,
-        3.2,
+        6.5,
+        8.7,
+        3.4,
         1.0,
         "gNB-1",
         "5G-LENA + Sionna RT | Cell ID 1",
@@ -97,9 +128,9 @@ def main():
 
     box(
         ax,
-        3.0,
-        6.0,
-        2.5,
+        3.2,
+        6.9,
+        2.7,
         1.0,
         "UE-1",
         "RNTI=1 | HEALTHY",
@@ -107,91 +138,139 @@ def main():
 
     box(
         ax,
-        9.0,
-        6.0,
-        2.5,
+        9.8,
+        6.9,
+        2.7,
         1.0,
         "UE-2",
         "RNTI=2 | DEGRADED",
     )
 
-    arrow(ax, 5.1, 7.35, 3.9, 6.55, "NR Uu")
-    arrow(ax, 6.9, 7.35, 8.1, 6.55, "NR Uu")
-
-    # ---------------------------------------------------------
-    # Core
-    # ---------------------------------------------------------
-
-    ax.text(
-        6,
-        4.85,
-        "5G CORE / EPC",
-        ha="center",
-        va="center",
-        fontsize=14,
-        fontweight="bold",
+    # Conceptual radio associations.
+    arrow(
+        ax,
+        5.25,
+        8.25,
+        4.45,
+        7.45,
+        "NR Uu",
+        label_dy=0.08,
     )
+
+    arrow(
+        ax,
+        7.75,
+        8.25,
+        8.55,
+        7.45,
+        "NR Uu",
+        label_dy=0.08,
+    )
+
+    # =========================================================
+    # CORE NETWORK
+    # =========================================================
 
     box(
         ax,
-        3.6,
-        3.55,
-        2.2,
-        0.85,
+        3.7,
+        4.15,
+        2.4,
+        0.9,
         "SGW",
         "Serving Gateway",
     )
 
     box(
         ax,
-        6.0,
-        3.55,
-        2.2,
-        0.85,
+        6.5,
+        4.15,
+        2.4,
+        0.9,
         "PGW",
         "Packet Gateway",
     )
 
     box(
         ax,
-        9.2,
-        6.0,
-        2.5,
-        1.0,
+        9.3,
+        4.15,
+        2.4,
+        0.9,
         "MME",
         "Mobility Management",
     )
 
-    arrow(ax, 6, 7.4, 3.6, 4.0, "S1-U")
-    arrow(ax, 3.6, 3.55, 6.0, 3.55, "S5")
-    arrow(ax, 7.1, 7.4, 8.2, 6.55, "S1-MME")
-    arrow(ax, 9.0, 5.5, 4.7, 4.0, "S11")
+    # =========================================================
+    # ACTUAL RECORDED CORE LINKS
+    # =========================================================
 
-    # ---------------------------------------------------------
-    # External network
-    # ---------------------------------------------------------
+    # gNB -> SGW : S1-U
+    arrow(
+        ax,
+        5.65,
+        8.2,
+        4.0,
+        4.7,
+        "S1-U",
+        label_dx=-0.18,
+        label_dy=0.10,
+    )
 
+    # SGW <-> PGW : S5
+    arrow(
+        ax,
+        4.95,
+        4.15,
+        5.25,
+        4.15,
+        "S5",
+        label_dy=0.18,
+        bidirectional=True,
+    )
+
+    # SGW <-> MME : S11
+    arrow(
+        ax,
+        4.9,
+        4.35,
+        8.1,
+        4.35,
+        "S11",
+        label_dy=0.22,
+        bidirectional=True,
+    )
+
+    # PGW -> Remote Host : SGi
     box(
         ax,
-        6.0,
-        1.55,
-        3.0,
+        6.5,
+        1.65,
+        3.2,
         0.95,
         "Remote Host",
         "External data network",
     )
 
-    arrow(ax, 6.0, 3.1, 6.0, 2.05, "SGi")
+    arrow(
+        ax,
+        6.5,
+        3.65,
+        6.5,
+        2.15,
+        "SGi",
+        label_dx=0.28,
+    )
 
-    # ---------------------------------------------------------
-    # Research note
-    # ---------------------------------------------------------
+    # =========================================================
+    # EXPLANATORY NOTE
+    # =========================================================
 
     ax.text(
-        6,
+        6.5,
         0.55,
-        "Simulation architecture represented independently from "
-        "the quantitative measurement plots.",
+        "NR Uu shows the UE-gNB radio association; "
+        "S1-U, S5, S11 and SGi correspond to the recorded core-network links.",
         ha="center",
         va="center",
         fontsize=9,
@@ -203,7 +282,7 @@ def main():
 
     fig.savefig(
         output,
-        dpi=220,
+        dpi=240,
         bbox_inches="tight",
     )
 
