@@ -277,11 +277,15 @@ def main():
     print(llm_prompt)
 
     # ----------------------------------------------------------
-    # Generate answer with mock backend.
+    # Generate a grounded answer through the SDTLLMPipeline.
+    #
+    # This ensures the simulator-grounded evidence validator,
+    # retry logic, and deterministic fallback are applied.
     # ----------------------------------------------------------
 
-    answer = pipeline.llm.generate(
-        llm_prompt
+    answer = pipeline.answer(
+        question,
+        k_history=4,
     )
 
     print()

@@ -81,3 +81,124 @@ def test_empty_token_set_does_not_crash():
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+def test_prompt_grounding_rules_prevent_radio_label_contradiction():
+    from sdt_llm.llm.prompt_builder import SYSTEM_PREAMBLE
+
+    assert "semantic labels as authoritative classifications" in SYSTEM_PREAMBLE
+    assert "degraded_radio_link" in SYSTEM_PREAMBLE
+    assert "good_radio_link" in SYSTEM_PREAMBLE
+    assert "Do not contradict a semantic label" in SYSTEM_PREAMBLE
+
+
+def test_prompt_forbids_invented_numeric_severity_labels():
+    from sdt_llm.llm.prompt_builder import SYSTEM_PREAMBLE
+
+    assert "Do not invent qualitative descriptors" in SYSTEM_PREAMBLE
+    assert "actual measured value and unit" in SYSTEM_PREAMBLE
+
+def test_canonical_ue_evidence_groups_measurements_by_rnti():
+    from sdt_llm.llm.evidence import build_canonical_ue_evidence
+    from sdt_llm.tokens import SemanticToken
+    import numpy as np
+
+    tokens = [
+        SemanticToken(
+            embedding=np.zeros(4, dtype=np.float32),
+            label="good_radio_link",
+            modality="fused",
+            timestamp=0.49,
+            location=(0.0, 0.0, 0.0),
+            attributes={
+                "rnti": 1,
+                "sinr_db": 16.93,
+                "packet_loss_pct": 0.0,
+            },
+        ),
+        SemanticToken(
+            embedding=np.zeros(4, dtype=np.float32),
+            label="degraded_radio_link",
+            modality="fused",
+            timestamp=0.49,
+            location=(0.0, 0.0, 0.0),
+            attributes={
+                "rnti": 2,
+                "sinr_db": 6.89,
+                "packet_loss_pct": 57.0,
+            },
+        ),
+    ]
+
+    evidence = build_canonical_ue_evidence(tokens)
+
+    assert "UE / RNTI=1" in evidence
+    assert "sinr_db=16.93" in evidence
+    assert "UE / RNTI=2" in evidence
+    assert "sinr_db=6.89" in evidence
+
+
+def test_grounding_validator_rejects_contradictory_radio_condition():
+    from sdt_llm.llm.grounding import (
+        UEGroundTruth,
+        validate_answer,
+    )
+
+    ground_truth = {
+        "7.0.0.3": UEGroundTruth(
+            ue_ip="7.0.0.3",
+            rnti=2,
+            radio_label="degraded_radio_link",
+            network_label="high_packet_loss",
+            sinr_db=6.89,
+            packet_loss_pct=57.0,
+            throughput_mbps=44.03,
+            delay_ms=40.77,
+        )
+    }
+
+    bad_answer = (
+        "UE IP 7.0.0.3 has a good radio link and "
+        "strong radio link."
+    )
+
+    valid, reason = validate_answer(
+        bad_answer,
+        ground_truth,
+    )
+
+    assert not valid
+    assert "contradict" not in reason.lower() or "SDT" in reason
+
+
+def test_grounding_validator_rejects_rnti_only_radio_contradiction():
+    from sdt_llm.llm.grounding import (
+        UEGroundTruth,
+        validate_answer,
+    )
+
+    ground_truth = {
+        "7.0.0.3": UEGroundTruth(
+            ue_ip="7.0.0.3",
+            rnti=2,
+            radio_label="degraded_radio_link",
+            network_label="high_packet_loss",
+            sinr_db=6.89,
+            packet_loss_pct=57.0,
+            throughput_mbps=44.03,
+            delay_ms=40.77,
+        )
+    }
+
+    bad_answer = (
+        "UE / RNTI=2 has a good_radio_link and "
+        "a strong radio link."
+    )
+
+    valid, reason = validate_answer(
+        bad_answer,
+        ground_truth,
+    )
+
+    assert not valid
+    assert "RNTI=2" in reason

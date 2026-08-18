@@ -46,6 +46,10 @@ from sdt_llm.encoders.network_encoder import (
 )
 from sdt_llm.llm.factory import build_llm
 from sdt_llm.llm.prompt_builder import build_prompt
+from sdt_llm.llm.grounding import (
+    UEGroundTruth,
+    validate_answer,
+)
 from sdt_llm.sdt.digital_twin import (
     SDTConfig,
     SemanticDigitalTwin,
@@ -331,6 +335,174 @@ class SDTLLMPipeline:
             timestamp,
         )
 
+    def _build_ue_ground_truth(self) -> Dict[str, UEGroundTruth]:
+        """
+        Build simulator-grounded UE evidence from the latest SDT tokens.
+
+        The SDT is authoritative for RNTI identity and measured values.
+        """
+
+        latest_by_rnti: Dict[int, Any] = {}
+
+        for token in self.twin.query_context(
+            k_history=self.cfg.k_history
+        ):
+            rnti = token.attributes.get("rnti")
+
+            if rnti is None:
+                continue
+
+            try:
+                rnti_int = int(rnti)
+            except (TypeError, ValueError):
+                continue
+
+            previous = latest_by_rnti.get(rnti_int)
+
+            if (
+                previous is None
+                or token.timestamp >= previous.timestamp
+            ):
+                latest_by_rnti[rnti_int] = token
+
+        ground_truth: Dict[str, UEGroundTruth] = {}
+
+        for rnti, token in latest_by_rnti.items():
+            attrs = token.attributes
+
+            ue_ip = str(
+                attrs.get(
+                    "ue_ip",
+                    attrs.get(
+                        "source",
+                        f"RNTI={rnti}",
+                    ),
+                )
+            )
+
+            label_parts = token.label.split("+")
+
+            radio_label = next(
+                (
+                    label
+                    for label in label_parts
+                    if "radio" in label
+                ),
+                token.label,
+            )
+
+            network_label = next(
+                (
+                    label
+                    for label in label_parts
+                    if (
+                        "network" in label
+                        or "packet_loss" in label
+                    )
+                ),
+                token.label,
+            )
+
+            ground_truth[ue_ip] = UEGroundTruth(
+                ue_ip=ue_ip,
+                rnti=rnti,
+                radio_label=radio_label,
+                network_label=network_label,
+                sinr_db=float(attrs.get("sinr_db", 0.0)),
+                packet_loss_pct=float(
+                    attrs.get("packet_loss_pct", 0.0)
+                ),
+                throughput_mbps=float(
+                    attrs.get("throughput_mbps", 0.0)
+                ),
+                delay_ms=float(
+                    attrs.get("mean_delay_ms", 0.0)
+                ),
+            )
+
+        return ground_truth
+
+    @staticmethod
+    def _deterministic_fallback(
+        question: str,
+        ground_truth: Dict[str, UEGroundTruth],
+    ) -> str:
+        """
+        Produce a simulator-grounded answer when the LLM cannot
+        satisfy the grounding contract.
+        """
+
+        if not ground_truth:
+            return (
+                "The SDT does not contain sufficient RNTI-grounded "
+                "measurements to answer this query."
+            )
+
+        worst = max(
+            ground_truth.values(),
+            key=lambda item: (
+                item.packet_loss_pct,
+                item.delay_ms,
+            ),
+        )
+
+        return (
+            f"UE IP {worst.ue_ip} (RNTI {worst.rnti}) has the "
+            f"strongest cross-layer degradation. "
+            f"Radio condition: {worst.radio_label}. "
+            f"Network condition: {worst.network_label}. "
+            f"SINR: {worst.sinr_db:.2f} dB; "
+            f"packet loss: {worst.packet_loss_pct:.0f}%; "
+            f"throughput: {worst.throughput_mbps:.2f} Mbps; "
+            f"mean delay: {worst.delay_ms:.2f} ms."
+        )
+
+    def _generate_grounded_answer(
+        self,
+        question: str,
+        prompt: str,
+    ) -> str:
+        """
+        Generate, validate, retry once, then fall back deterministically.
+        """
+
+        ground_truth = self._build_ue_ground_truth()
+
+        answer = self.llm.generate(prompt)
+
+        valid, _ = validate_answer(
+            answer,
+            ground_truth,
+        )
+
+        if valid:
+            return answer
+
+        correction = (
+            "\n\n[GROUNDING CORRECTION]\n"
+            "Your previous answer contradicted simulator-grounded SDT "
+            "evidence. Retry using the canonical UE/RNTI evidence. "
+            "Do not swap measurements between UE identities. "
+            "Return only claims supported by the supplied evidence.\n"
+        )
+
+        retry_prompt = prompt + correction
+
+        retry_answer = self.llm.generate(retry_prompt)
+
+        valid, _ = validate_answer(
+            retry_answer,
+            ground_truth,
+        )
+
+        if valid:
+            return retry_answer
+
+        return self._deterministic_fallback(
+            question,
+            ground_truth,
+        )
+
     def answer(
         self,
         question: str,
@@ -351,8 +523,9 @@ class SDTLLMPipeline:
             ),
         )
 
-        return self.llm.generate(
-            prompt
+        return self._generate_grounded_answer(
+            question,
+            prompt,
         )
 
     def ask(
@@ -377,8 +550,9 @@ class SDTLLMPipeline:
             ),
         )
 
-        answer = self.llm.generate(
-            prompt
+        answer = self._generate_grounded_answer(
+            question,
+            prompt,
         )
 
         return {
