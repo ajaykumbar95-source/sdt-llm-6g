@@ -13,3 +13,6 @@ results/visualizations/
 .pytest_cache/
 __pycache__/
 *.pyc
+
+# Generated research/runtime artifacts
+results/
