@@ -18,6 +18,15 @@ cd "$NS3_DIR"
 
 echo
 echo "=============================================="
+echo "1B. Preparing NetAnim visualization"
+echo "=============================================="
+
+cd "$PROJECT_DIR"
+PYTHONPATH=src python scripts/prepare_netanim_visual.py
+
+
+echo
+echo "=============================================="
 echo "2. Running temporal SDT"
 echo "=============================================="
 
@@ -35,3 +44,13 @@ echo
 echo "=============================================="
 echo "PIPELINE COMPLETE"
 echo "=============================================="
+
+echo
+echo "=============================================="
+echo "4. Generating research visualizations"
+echo "=============================================="
+
+PYTHONPATH=src python scripts/visualize_sdt_results.py
+
+PYTHONPATH=src python scripts/visualize_research_topology.py
+PYTHONPATH=src python scripts/visualize_sdt_heatmap.py

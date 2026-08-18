@@ -5,3 +5,11 @@ __pycache__/
 .env
 *.log
 .DS_Store
+
+# Runtime simulation outputs
+*.csv
+*.xml
+results/visualizations/
+.pytest_cache/
+__pycache__/
+*.pyc
