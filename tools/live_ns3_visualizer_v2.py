@@ -515,6 +515,10 @@ class MainWindow(QMainWindow):
         self.rx_packets = 0
         self.tx_packets = 0
         self.last_metrics: dict[str, str] = {}
+        self.ue_network_state: dict[int, dict] = {
+            1: {},
+            2: {},
+        }
         self.selected_node = None
         self.selected_flow_dest = None
         self.selected_flow_name = "All traffic"
@@ -607,18 +611,36 @@ class MainWindow(QMainWindow):
         self.selected_title.setObjectName("detailTitle")
         self.selected_details = QPlainTextEdit()
         self.selected_details.setReadOnly(True)
+        self.selected_details.setMinimumHeight(42)
+        self.selected_details.setMaximumHeight(58)
+
+        self.sdt_title = QLabel("SDT STATE")
+        self.sdt_title.setObjectName("detailTitle")
+
+        self.sdt_state = QPlainTextEdit()
+        self.sdt_state.setReadOnly(True)
+        self.sdt_state.setMinimumHeight(215)
+        self.sdt_state.setMaximumHeight(225)
 
         self.packet_title = QLabel("Packet inspector")
         self.packet_details = QPlainTextEdit()
         self.packet_details.setReadOnly(True)
+        self.packet_details.setMinimumHeight(55)
+        self.packet_details.setMaximumHeight(72)
 
         self.metrics = QPlainTextEdit()
         self.metrics.setReadOnly(True)
+        self.metrics.setMinimumHeight(72)
+        self.metrics.setMaximumHeight(92)
 
         self.flow_trace = QPlainTextEdit()
         self.flow_trace.setReadOnly(True)
+        self.flow_trace.setMinimumHeight(72)
+        self.flow_trace.setMaximumHeight(88)
 
         self.events = QTableWidget(0, 5)
+        self.events.setMinimumHeight(145)
+        self.events.setMaximumHeight(185)
         self.events.setHorizontalHeaderLabels(
             ["Sim time", "From", "To", "Type", "Info"]
         )
@@ -627,7 +649,11 @@ class MainWindow(QMainWindow):
         # Right panel
         right = QVBoxLayout()
         right.addWidget(self.selected_title)
-        right.addWidget(self.selected_details, 2)
+        right.addWidget(self.selected_details, 0)
+
+        right.addWidget(self.sdt_title)
+        right.addWidget(self.sdt_state, 0)
+
         right.addWidget(self.packet_title)
         right.addWidget(self.packet_details, 2)
         right.addWidget(QLabel("Live metrics"))
@@ -702,8 +728,11 @@ class MainWindow(QMainWindow):
             }
             QLabel#detailTitle {
                 color: #93c5fd;
-                font-size: 12pt;
+                font-size: 11pt;
                 font-weight: bold;
+            }
+            QPlainTextEdit {
+                font-size: 9pt;
             }
         """)
 
@@ -1110,29 +1139,112 @@ class MainWindow(QMainWindow):
                 self.canvas.update()
                 return
 
+    def update_sdt_state_panel(self, node_id: int) -> None:
+        if node_id not in (1, 2):
+            self.sdt_state.setPlainText(
+                "Select UE-1 or UE-2."
+            )
+            return
+
+        radio = self.canvas.last_node_state.get(node_id, {})
+        network = self.ue_network_state.get(node_id, {})
+
+        sinr_db = radio.get("sinr_db")
+        loss = network.get("packet_loss_pct")
+        throughput = network.get("throughput_mbps")
+        delay = network.get("mean_delay_ms")
+        jitter = network.get("mean_jitter_ms")
+
+        degraded_radio = (
+            isinstance(sinr_db, (int, float))
+            and math.isfinite(sinr_db)
+            and sinr_db < 10.0
+        )
+
+        high_loss = (
+            isinstance(loss, (int, float))
+            and loss >= 20.0
+        )
+
+        high_delay = (
+            isinstance(delay, (int, float))
+            and delay >= 20.0
+        )
+
+        degraded = degraded_radio or high_loss or high_delay
+
+        reasons = []
+        if degraded_radio:
+            reasons.append("• Low SINR")
+        if high_loss:
+            reasons.append("• High packet loss")
+        if high_delay:
+            reasons.append("• Elevated delay")
+        if not reasons:
+            reasons.append("• No major degradation indicator")
+
+        semantic = []
+        if degraded_radio:
+            semantic.append("degraded_radio_link")
+        if high_loss:
+            semantic.append("high_packet_loss")
+        if not semantic:
+            semantic.append("no_major_degradation")
+
+        def fmt(v, unit=""):
+            return "N/A" if v is None else f"{v:.2f}{unit}"
+
+        status = "⚠ DEGRADED" if degraded else "✓ NORMAL"
+
+        lines = [
+            f"UE-{node_id} / RNTI={radio.get('rnti', node_id)}    {status}",
+            "",
+            "RADIO",
+            f"  SINR {fmt(sinr_db, ' dB')}    Cell/BWP "
+            f"{radio.get('cell_id', 'N/A')}/{radio.get('bwp_id', 'N/A')}    "
+            f"TB {radio.get('tb_size', 'N/A')} B",
+            "",
+            "NETWORK",
+            f"  Loss {fmt(loss, ' %')}    "
+            f"Throughput {fmt(throughput, ' Mbps')}",
+            f"  Delay {fmt(delay, ' ms')}    "
+            f"Jitter {fmt(jitter, ' ms')}",
+            "",
+            "WHY?",
+            "  " + "   ".join(reasons),
+            "",
+            "SDT STATE",
+            "  " + " + ".join(semantic),
+        ]
+
+        self.sdt_state.setPlainText("\n".join(lines))
+
     def show_node(self, node_id: int) -> None:
         name = NODE_NAMES[node_id]
         self.selected_title.setText(name)
 
         state = self.canvas.last_node_state.get(node_id, {})
-        lines = [f"Node ID: {node_id}", f"Role: {NODE_LAYOUT[node_id][3]}"]
 
+        # Keep this box deliberately compact. Detailed diagnosis belongs
+        # in the SDT STATE panel below it.
         if node_id in (1, 2):
-            lines += [
-                f"RNTI: {state.get('rnti', 'N/A')}",
+            summary = [
+                f"Node ID: {node_id}",
+                f"Role: RNTI={state.get('rnti', node_id)}",
                 (
                     f"SINR: {state.get('sinr_db', float('nan')):.2f} dB"
-                    if math.isfinite(state.get("sinr_db", float("nan")))
+                    if math.isfinite(state.get('sinr_db', float('nan')))
                     else "SINR: N/A"
                 ),
-                f"Last TB: {state.get('tb_size', 'N/A')} B",
-                f"Cell: {state.get('cell_id', 'N/A')}",
-                f"BWP: {state.get('bwp_id', 'N/A')}",
-                f"Corrupt: {state.get('corrupt', 'N/A')}",
-                f"State: {'DEGRADED' if state.get('degraded') else 'NORMAL'}",
+            ]
+        else:
+            summary = [
+                f"Node ID: {node_id}",
+                f"Role: {NODE_LAYOUT[node_id][3]}",
             ]
 
-        self.selected_details.setPlainText("\n".join(lines))
+        self.selected_details.setPlainText("\n".join(summary))
+        self.update_sdt_state_panel(node_id)
 
     def show_packet(self, packet: Packet) -> None:
         self.packet_title.setText("Packet inspector")
@@ -1155,8 +1267,11 @@ class MainWindow(QMainWindow):
         while self.events.rowCount() > 100:
             self.events.removeRow(self.events.rowCount() - 1)
 
-    def update_user_plane_route(self, sim_time: float, destination: int | None = None) -> None:
-        now = time.monotonic()
+    def update_user_plane_route(
+        self,
+        sim_time: float,
+        destination: int | None = None,
+    ) -> None:
         recent = {
             key: stamp
             for key, stamp in self.recent_user_plane_hops.items()
@@ -1165,15 +1280,23 @@ class MainWindow(QMainWindow):
         self.recent_user_plane_hops = recent
 
         if self.selected_flow_dest == 1:
-            route = "FLOW 1: Remote Host → PGW → SGW → gNB-1 → UE-1"
+            route = (
+                "FLOW 1: Remote Host → PGW → SGW → gNB-1 → UE-1"
+            )
         elif self.selected_flow_dest == 2:
-            route = "FLOW 2: Remote Host → PGW → SGW → gNB-1 → UE-2"
-        elif destination == 1:
-            route = "USER PLANE: Remote Host → PGW → SGW → gNB-1 → UE-1"
-        elif destination == 2:
-            route = "USER PLANE: Remote Host → PGW → SGW → gNB-1 → UE-2"
+            route = (
+                "FLOW 2: Remote Host → PGW → SGW → gNB-1 → UE-2"
+            )
+        elif destination in (1, 2):
+            route = (
+                "USER PLANE: Remote Host → PGW → SGW → gNB-1 → "
+                f"UE-{destination}"
+            )
         else:
-            route = "USER PLANE: Remote Host → PGW → SGW → gNB-1 → UE"
+            route = (
+                "USER PLANE: Remote Host → PGW → SGW → gNB-1 → "
+                "UE-1 / UE-2"
+            )
 
         self.canvas.current_route_text = route
 
@@ -1183,55 +1306,62 @@ class MainWindow(QMainWindow):
         to_id: int,
         sim_time: float,
     ) -> None:
-        destination = None
-
-        if to_id == 1:
-            destination = 1
-        elif to_id == 2:
-            destination = 2
-        elif frozenset((from_id, to_id)) == frozenset((6, 3)):
-            destination = self.selected_flow_dest
-        elif frozenset((from_id, to_id)) == frozenset((3, 4)):
-            destination = self.selected_flow_dest
-        elif frozenset((from_id, to_id)) == frozenset((4, 0)):
-            destination = self.selected_flow_dest
+        # Sequential observed user-plane route.
+        # This is route visualization, not end-to-end packet-ID correlation.
+        destination = self.selected_flow_dest
 
         if destination not in (1, 2):
-            return
+            # Infer the UE for an NR final hop even when All traffic is selected.
+            if to_id in (1, 2):
+                destination = to_id
+            else:
+                return
 
         if not self.flow_hop_allowed(from_id, to_id):
             return
 
-        sequence = self.flow_hop_sequence[destination]
         key = frozenset((from_id, to_id))
 
+        sequence = self.flow_hop_sequence.get(destination, [])
+
         for index, (a, b, label) in enumerate(sequence):
-            if frozenset((a, b)) == key:
-                # Only move forward through the path.
-                if index >= self.last_hop_index[destination]:
-                    self.last_hop_index[destination] = index
-                    self.canvas.set_current_hop(from_id, to_id)
-                    self.flow_trace.setPlainText(
-                        f"Flow {destination} → UE-{destination}\n\n"
-                        f"ACTIVE HOP: {label}\n\n"
-                        f"{NODE_NAMES[a]}  →  {NODE_NAMES[b]}\n\n"
-                        f"Observed simulation time: {sim_time:.6f} s\n\n"
-                        f"Path:\n"
-                        + "\n".join(
-                            [
-                                "Remote Host",
-                                "    ↓ SGi",
-                                "   PGW",
-                                "    ↓ S5",
-                                "   SGW",
-                                "    ↓ S1-U",
-                                "   gNB-1",
-                                "    ↓ NR Uu",
-                                f"   UE-{destination}",
-                            ]
-                        )
-                    )
+            if frozenset((a, b)) != key:
+                continue
+
+            # Only advance forward through the route.
+            if index < self.last_hop_index.get(destination, -1):
                 return
+
+            self.last_hop_index[destination] = index
+
+            self.canvas.set_current_hop(
+                from_id,
+                to_id,
+                seconds=0.9,
+            )
+
+            path_lines = [
+                f"Flow {destination} → UE-{destination}",
+                "",
+                f"ACTIVE HOP: {label}",
+                f"{NODE_NAMES.get(a, a)} → {NODE_NAMES.get(b, b)}",
+                "",
+                f"Observed simulation time: {sim_time:.6f} s",
+                "",
+                "Path:",
+                "Remote Host",
+                "    ↓ SGi",
+                "   PGW",
+                "    ↓ S5",
+                "   SGW",
+                "    ↓ S1-U",
+                "   gNB-1",
+                "    ↓ NR Uu",
+                f"   UE-{destination}",
+            ]
+
+            self.flow_trace.setPlainText("\n".join(path_lines))
+            return
 
     def record_user_plane_hop(
         self,
@@ -1399,32 +1529,111 @@ class MainWindow(QMainWindow):
 
         self.update_metrics_panel()
 
+    def _float_field(self, row: dict, key: str):
+        value = row.get(key)
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+
+    def _update_ue_network_state_from_row(self, row: dict) -> None:
+        try:
+            rnti = int(row.get("rnti", ""))
+        except (TypeError, ValueError):
+            return
+
+        if rnti not in (1, 2):
+            return
+
+        state = self.ue_network_state[rnti]
+
+        state.update({
+            "time_s": self._float_field(row, "time_s"),
+            "flow_id": row.get("flow_id"),
+            "ue_ip": row.get("ue_ip"),
+            "packet_loss_pct": self._float_field(
+                row, "interval_packet_loss_pct"
+            ),
+            "throughput_mbps": self._float_field(
+                row, "interval_throughput_mbps"
+            ),
+            "mean_delay_ms": self._float_field(
+                row, "interval_mean_delay_ms"
+            ),
+            "mean_jitter_ms": self._float_field(
+                row, "interval_mean_jitter_ms"
+            ),
+            "tx_packets": self._float_field(
+                row, "interval_tx_packets"
+            ),
+            "rx_packets": self._float_field(
+                row, "interval_rx_packets"
+            ),
+            "lost_packets": self._float_field(
+                row, "interval_lost_packets"
+            ),
+        })
+
+        if self.selected_node == rnti:
+            self.update_sdt_state_panel(rnti)
+
+
     def poll_network_trace(self) -> None:
         if not NETWORK_TRACE.exists():
             return
 
         try:
-            with NETWORK_TRACE.open("r", encoding="utf-8", newline="") as handle:
-                handle.seek(self.trace_offset)
-                new_data = handle.read()
-                self.trace_offset = handle.tell()
-        except OSError:
+            with NETWORK_TRACE.open(
+                "r",
+                encoding="utf-8",
+                newline=""
+            ) as handle:
+                reader = csv.DictReader(handle)
+                rows = list(reader)
+        except (OSError, csv.Error):
             return
 
-        if not new_data.strip():
-            return
-
-        # Network trace may be recreated between runs. Parse only complete lines.
-        rows = [r for r in new_data.splitlines() if r.strip()]
         if not rows:
             return
 
-        for row in rows[-20:]:
-            parts = next(csv.reader([row]), [])
-            if len(parts) >= 2:
-                self.last_metrics["last_trace"] = " | ".join(parts[:8])
+        # The file is the authoritative network-trace source.
+        # Keep only the newest row for each RNTI.
+        latest_by_rnti = {}
+
+        for row in rows:
+            try:
+                rnti = int(row.get("rnti", ""))
+            except (TypeError, ValueError):
+                continue
+
+            if rnti in (1, 2):
+                latest_by_rnti[rnti] = row
+
+        for rnti, row in latest_by_rnti.items():
+            self._update_ue_network_state_from_row(row)
+
+        newest = rows[-1]
+
+        self.last_metrics["last_trace"] = (
+            " | ".join(
+                [
+                    str(newest.get("time_s", "")),
+                    str(newest.get("flow_id", "")),
+                    str(newest.get("rnti", "")),
+                    str(newest.get("ue_ip", "")),
+                    str(newest.get("protocol", "")),
+                ]
+            )
+        )
+
+        if self.selected_node in (1, 2):
+            self.update_sdt_state_panel(self.selected_node)
 
         self.update_metrics_panel()
+
 
     def update_metrics_panel(self) -> None:
         proc = "running" if self.ns3_process and self.ns3_process.poll() is None else "stopped"
